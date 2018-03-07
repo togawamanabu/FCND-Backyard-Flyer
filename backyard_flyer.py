@@ -24,6 +24,7 @@ class BackyardFlyer(Drone):
         super().__init__(connection)
         self.target_position = np.array([0.0, 0.0, 0.0])
         self.all_waypoints = []
+        self.target_waypoint_index = 0
         self.in_mission = True
         self.check_state = {}
 
@@ -44,9 +45,17 @@ class BackyardFlyer(Drone):
 
         if self.flight_state == States.TAKEOFF:
             altitude = -1.0 * self.local_position[2]
-
             if altitude > 0.95 * self.target_position[2]:
-                self.calculate_box()
+                self.all_waypoints = self.calculate_box()
+                self.waypoint_transition()
+
+        if self.flight_state == States.WAYPOINT:
+            if (self.target_position[0] - self.local_position[0]) * (self.target_position[0] - self.local_position[0]) + (self.target_position[1] - self.local_position[1]) * (self.target_position[1] - self.local_position[1]) < 0.5:
+                if len(self.all_waypoints) <= self.target_waypoint_index-1:
+                    self.landing_transition()
+                else:
+                    self.target_waypoint_index +=1
+                    self.waypoint_transition()
 
     def velocity_callback(self):
         """
@@ -68,19 +77,22 @@ class BackyardFlyer(Drone):
         """
         if not self.in_mission:
             return
+        elif self.flight_state == States.MANUAL:
+            self.arming_transition()
         elif self.flight_state == States.ARMING:
-            self.takeoff_transition()
+            if self.armed:
+                self.takeoff_transition()
         elif self.flight_state == States.DISARMING:
-            self.manual_transition()
-
+            if not self.armed and self.guided:
+                self.manual_transition()
 
     def calculate_box(self):
         """TODO: Fill out this method
 
         1. Return waypoints to fly a box
         """
-
-        return([[[5,0], [5,5], [5,0], [0.0]])
+        l = 15
+        return([[l,0], [l,l], [0,l], [0,0]])
 
     def arming_transition(self):
         """TODO: Fill out this method
@@ -111,11 +123,11 @@ class BackyardFlyer(Drone):
         print("takeoff transition")
 
         target_altitude = 5.0
-        self.target_postion[2] = target_altitude
+        self.target_position[2] = target_altitude
         self.takeoff(target_altitude)
         self.flight_state = States.TAKEOFF
 
-    def waypoint_transition(self, north, east):
+    def waypoint_transition(self):
         """TODO: Fill out this method
 
         1. Command the next waypoint position
@@ -123,7 +135,12 @@ class BackyardFlyer(Drone):
         """
         print("waypoint transition")
 
-        self.cmd_possition(north, east, self.target_postion[2])
+        target = self.all_waypoints[self.target_waypoint_index]
+        self.target_position[0] = target[0]
+        self.target_position[1] = target[1]
+        self.cmd_position(target[0], target[1], self.target_position[2], 0)
+
+        self.flight_state = States.WAYPOINT
 
 
     def landing_transition(self):
